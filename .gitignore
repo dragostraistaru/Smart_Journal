@@ -1,3 +1,7 @@
 venv/
 __pycache__/
 *.pyc
+*.sqlite3
+storage/images/
+storage/smart_journal.db
+.pytest_cache/

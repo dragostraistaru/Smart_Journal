@@ -32,3 +32,20 @@ O aplicatie desktop de jurnal personal cu functionalitati AI pentru analiza disp
 - **Baza de date**: ORM (SQLAlchemy)
 - **AI — Mood detection**: BERT fine-tuned pe dataset de emotii
 - **AI — Text generation**: LLM Service (Ollama local sau cloud facultate)
+
+## Structura proiect (Iteratia 1)
+
+- `app/ui` - ecrane si widget-uri PyQt6
+- `app/services` - logica de business
+- `app/repositories` - acces la date
+- `app/models` - entitati SQLAlchemy
+- `app/db` - sesiune, baza, init DB
+- `storage/images` - poze atasate intrarilor
+
+## Rulare locala
+
+1. Activeaza mediul virtual.
+2. Instaleaza dependintele: `pip install -r requirements.txt`
+3. Ruleaza aplicatia: `python main.py`
+
+La prima rulare se creeaza automat baza de date locala in `storage/smart_journal.db`.
