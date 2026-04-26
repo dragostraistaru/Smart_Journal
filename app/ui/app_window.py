@@ -46,6 +46,7 @@ class AppWindow(QMainWindow):
 
         self.current_user_id: int | None = None
         self.current_edit_entry_id: int | None = None
+        self.existing_attachment_paths: list[str] = []
         self.pending_attachments: list[str] = []
 
         self.sidebar = Sidebar()
@@ -107,6 +108,7 @@ class AppWindow(QMainWindow):
         if self.current_user_id is None:
             return
         self.current_edit_entry_id = None
+        self.existing_attachment_paths = []
         self.pending_attachments = []
         self.entry_form_screen.clear_form()
         self.content_stack.setCurrentWidget(self.entry_form_screen)
@@ -127,7 +129,8 @@ class AppWindow(QMainWindow):
             return
 
         self.current_edit_entry_id = entry.id
-        self.pending_attachments = [a.file_path for a in attachments]
+        self.existing_attachment_paths = [a.file_path for a in attachments]
+        self.pending_attachments = list(self.existing_attachment_paths)
         self.entry_form_screen.populate(
             title=entry.title,
             content=entry.content,
@@ -158,6 +161,7 @@ class AppWindow(QMainWindow):
     def logout(self) -> None:
         self.current_user_id = None
         self.current_edit_entry_id = None
+        self.existing_attachment_paths = []
         self.pending_attachments = []
         self._set_logged_in_state(False)
         self.show_login()
@@ -205,6 +209,12 @@ class AppWindow(QMainWindow):
                     content=payload["content"],
                     entry_date=payload["entry_date"],
                 )
+                new_attachment_paths = [
+                    path for path in self.pending_attachments if path not in self.existing_attachment_paths
+                ]
+                if new_attachment_paths:
+                    self.attachment_service.add_attachments_to_entry(self.current_edit_entry_id, new_attachment_paths)
+            self.existing_attachment_paths = []
             self.pending_attachments = []
             self.show_journal()
         except AppError as exc:

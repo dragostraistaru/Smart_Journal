@@ -7,12 +7,13 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+
+from app.ui.widgets.attachment_preview import AttachmentPreview
 
 
 class EntryFormScreen(QWidget):
@@ -38,7 +39,7 @@ class EntryFormScreen(QWidget):
         self.content_input = QTextEdit()
         self.content_input.setPlaceholderText("Scrie despre ziua ta...")
 
-        self.attachments_list = QListWidget()
+        self.attachments_list = AttachmentPreview()
 
         pick_button = QPushButton("Ataseaza fisiere")
         pick_button.clicked.connect(on_pick_attachments)
@@ -83,12 +84,10 @@ class EntryFormScreen(QWidget):
         self.title_input.setText(title)
         self.content_input.setPlainText(content)
         self.date_input.setDate(QDate(entry_date.year, entry_date.month, entry_date.day))
-        self.attachments_list.clear()
-        self.attachments_list.addItems(attachments)
+        self.attachments_list.set_paths(attachments)
 
     def set_attachment_paths(self, paths: list[str]) -> None:
-        self.attachments_list.clear()
-        self.attachments_list.addItems(paths)
+        self.attachments_list.set_paths(paths)
 
     def _handle_save(self) -> None:
         payload = {
