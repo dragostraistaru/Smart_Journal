@@ -138,6 +138,12 @@
   color: #141824;
 }
 
+.status-line {
+  margin: 10px 0 0;
+  color: #49566d;
+  font-size: 0.85rem;
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;

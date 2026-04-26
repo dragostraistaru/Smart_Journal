@@ -1,67 +1,222 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import './App.css'
 
-type Entry = {
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
+
+type ApiEntry = {
   id: number
+  user_id: number
+  title: string
+  content: string
+  entry_date: string
+  mood_label: string | null
+  mood_confidence: number | null
+  created_at: string
+  updated_at: string
+}
+
+type CalendarEntry = {
+  id: number
+  dateIso: string
   day: number
   title: string
+  content: string
   time: string
   category: string
   tone: 'yellow' | 'orange' | 'blue' | 'pink' | 'violet' | 'red'
 }
 
+type CalendarCell = {
+  iso: string
+  day: number
+  inCurrentMonth: boolean
+}
+
 const dayNames = ['LUN', 'MAR', 'MIE', 'JOI', 'VIN', 'SAM', 'DUM']
-const monthLabels = ['Martie 2026', 'Aprilie 2026', 'Mai 2026']
 
-const entries: Entry[] = [
-  { id: 1, day: 1, title: 'Daily Journal', time: '15:30', category: 'Scrie', tone: 'yellow' },
-  { id: 2, day: 2, title: 'Daily Journal', time: '14:30', category: 'Scrie', tone: 'yellow' },
-  { id: 3, day: 3, title: 'Morning Plan', time: '06:00', category: 'Meditatie', tone: 'orange' },
-  { id: 4, day: 7, title: 'Morning Plan', time: '06:30', category: 'Meditatie', tone: 'orange' },
-  { id: 5, day: 8, title: 'Daily Journal', time: '19:15', category: 'Scrie', tone: 'yellow' },
-  { id: 6, day: 9, title: 'Objective Plan', time: '10:00', category: 'Obiectiv nou', tone: 'blue' },
-  { id: 7, day: 10, title: 'Morning Plan', time: '07:00', category: 'Meditatie', tone: 'orange' },
-  { id: 8, day: 11, title: 'Reflections', time: '21:00', category: 'Ganduri', tone: 'pink' },
-  { id: 9, day: 13, title: 'Daily Journal', time: '16:45', category: 'Scrie', tone: 'yellow' },
-  { id: 10, day: 14, title: 'Morning Plan', time: '06:30', category: 'Meditatie', tone: 'orange' },
-  { id: 11, day: 15, title: 'Objective Plan', time: '09:30', category: 'Obiectiv nou', tone: 'blue' },
-  { id: 12, day: 16, title: 'My Mystery Plan', time: '11:00', category: 'Push', tone: 'violet' },
-  { id: 13, day: 17, title: 'Daily Journal', time: '18:00', category: 'Scrie', tone: 'yellow' },
-  { id: 14, day: 20, title: 'Daily Journal', time: '20:00', category: 'Scrie', tone: 'yellow' },
-  { id: 15, day: 21, title: 'Objective Plan', time: '08:30', category: 'Obiectiv nou', tone: 'blue' },
-  { id: 16, day: 22, title: 'Daily Journal', time: '14:00', category: 'Scrie', tone: 'yellow' },
-  { id: 17, day: 27, title: 'Checkpoint', time: '12:00', category: 'Verificare', tone: 'red' },
-]
+function toIsoDate(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
-const monthCells = [
-  23, 24, 25, 26, 27, 28, 1,
-  2, 3, 4, 5, 6, 7, 8,
-  9, 10, 11, 12, 13, 14, 15,
-  16, 17, 18, 19, 20, 21, 22,
-  23, 24, 25, 26, 27, 28, 29,
-  30, 31, 1, 2, 3, 4, 5,
-]
+function toneFromMood(mood: string | null): CalendarEntry['tone'] {
+  if (!mood) {
+    return 'yellow'
+  }
+
+  const normalized = mood.toLowerCase()
+  if (normalized.includes('anx')) {
+    return 'red'
+  }
+  if (normalized.includes('calm')) {
+    return 'blue'
+  }
+  if (normalized.includes('neutral')) {
+    return 'yellow'
+  }
+  return 'violet'
+}
+
+function buildCalendarCells(currentMonth: Date): CalendarCell[] {
+  const year = currentMonth.getFullYear()
+  const month = currentMonth.getMonth()
+  const firstDay = new Date(year, month, 1)
+  const mondayOffset = (firstDay.getDay() + 6) % 7
+  const startDate = new Date(year, month, 1 - mondayOffset)
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const cellDate = new Date(startDate)
+    cellDate.setDate(startDate.getDate() + index)
+    return {
+      iso: toIsoDate(cellDate),
+      day: cellDate.getDate(),
+      inCurrentMonth: cellDate.getMonth() === month,
+    }
+  })
+}
 
 function App() {
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
+  const [userId, setUserId] = useState<number | null>(null)
+  const [entries, setEntries] = useState<ApiEntry[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [statusMessage, setStatusMessage] = useState('')
+
   const [activeCategory, setActiveCategory] = useState('Toate intrarile')
   const [searchTerm, setSearchTerm] = useState('')
   const [activeSection, setActiveSection] = useState('Jurnal')
-  const [monthIndex, setMonthIndex] = useState(0)
+
+  const monthLabel = useMemo(() => {
+    return new Intl.DateTimeFormat('ro-RO', { month: 'long', year: 'numeric' }).format(currentMonth)
+  }, [currentMonth])
+
+  const categories = useMemo(() => {
+    const uniqueTitles = [...new Set(entries.map((entry) => entry.title))]
+    return ['Toate intrarile', ...uniqueTitles]
+  }, [entries])
+
+  const mappedEntries = useMemo<CalendarEntry[]>(() => {
+    return entries.map((entry) => {
+      const dateParts = entry.entry_date.split('-')
+      const day = Number(dateParts[2])
+      const createdAt = new Date(entry.created_at)
+      const time = Number.isNaN(createdAt.getTime())
+        ? '--:--'
+        : createdAt.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+
+      return {
+        id: entry.id,
+        dateIso: entry.entry_date,
+        day,
+        title: entry.title,
+        content: entry.content,
+        time,
+        category: entry.mood_label ?? 'Jurnal',
+        tone: toneFromMood(entry.mood_label),
+      }
+    })
+  }, [entries])
+
+  const calendarCells = useMemo(() => buildCalendarCells(currentMonth), [currentMonth])
 
   const visibleEntries = useMemo(() => {
-    return entries.filter((entry) => {
+    return mappedEntries.filter((entry) => {
       const matchesCategory =
         activeCategory === 'Toate intrarile' || entry.title === activeCategory
       const matchesSearch =
         searchTerm.trim().length === 0 ||
-        `${entry.title} ${entry.category} ${entry.time}`
+        `${entry.title} ${entry.category} ${entry.time} ${entry.content}`
           .toLowerCase()
           .includes(searchTerm.trim().toLowerCase())
 
       return matchesCategory && matchesSearch
     })
-  }, [activeCategory, searchTerm])
+  }, [activeCategory, mappedEntries, searchTerm])
+
+  async function loadEntries(forUserId: number): Promise<void> {
+    const response = await fetch(`${API_BASE}/api/entries?user_id=${forUserId}`)
+    if (!response.ok) {
+      throw new Error('Nu am putut incarca intrarile din backend.')
+    }
+    const payload = (await response.json()) as ApiEntry[]
+    setEntries(payload)
+  }
+
+  useEffect(() => {
+    async function bootstrap(): Promise<void> {
+      try {
+        const userResponse = await fetch(`${API_BASE}/api/users/bootstrap`, { method: 'POST' })
+        if (!userResponse.ok) {
+          throw new Error('Nu am putut initializa utilizatorul demo.')
+        }
+
+        const userPayload = (await userResponse.json()) as { id: number; email: string }
+        setUserId(userPayload.id)
+        await loadEntries(userPayload.id)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Eroare necunoscuta de conectare la API.'
+        setStatusMessage(message)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    void bootstrap()
+  }, [])
+
+  async function handleCreateEntry(): Promise<void> {
+    if (!userId) {
+      setStatusMessage('Nu exista user activ. Verifica API-ul.')
+      return
+    }
+
+    const title = window.prompt('Titlul intrarii:')?.trim()
+    if (!title) {
+      return
+    }
+
+    const content = window.prompt('Continutul intrarii:')?.trim()
+    if (!content) {
+      return
+    }
+
+    const defaultDate = toIsoDate(new Date())
+    const entryDate = window.prompt('Data (YYYY-MM-DD):', defaultDate)?.trim() ?? ''
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
+      setStatusMessage('Data invalida. Foloseste formatul YYYY-MM-DD.')
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/entries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          title,
+          content,
+          entry_date: entryDate,
+        }),
+      })
+
+      if (!response.ok) {
+        const detail = (await response.json()) as { detail?: string }
+        throw new Error(detail.detail ?? 'Nu am putut salva intrarea.')
+      }
+
+      await loadEntries(userId)
+      setStatusMessage('Intrarea a fost salvata in backend.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Eroare la salvare.'
+      setStatusMessage(message)
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -75,17 +230,15 @@ function App() {
 
         <p className="section-title">CATEGORII</p>
         <nav className="categories">
-          {['Toate intrarile', 'Daily Journal', 'Morning Plan', 'Reflections', 'Objective Plan'].map(
-            (category) => (
-              <button
-                key={category}
-                className={`category ${activeCategory === category ? 'active' : ''}`}
-                onClick={() => setActiveCategory(category)}
-              >
-                {category}
-              </button>
-            ),
-          )}
+          {categories.map((category) => (
+            <button
+              key={category}
+              className={`category ${activeCategory === category ? 'active' : ''}`}
+              onClick={() => setActiveCategory(category)}
+            >
+              {category}
+            </button>
+          ))}
           <button
             className="category add"
             onClick={() => alert('In iteratia 1 asta e doar mock UI. Aici vei crea o categorie noua.')}
@@ -95,8 +248,8 @@ function App() {
         </nav>
 
         <article className="streak-card">
-          <strong>14</strong>
-          <span>zile consecutive</span>
+          <strong>{visibleEntries.length}</strong>
+          <span>intrari vizibile</span>
         </article>
 
         <footer className="bottom-nav">
@@ -123,45 +276,52 @@ function App() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
-            <button
-              className="primary"
-              onClick={() => alert('Aici vei deschide formularul de intrare noua.')}
-            >
+            <button className="primary" onClick={() => void handleCreateEntry()}>
               + Intrare noua
             </button>
           </div>
         </header>
 
+        {isLoading && <p className="status-line">Se incarca datele din backend...</p>}
+        {!isLoading && statusMessage && <p className="status-line">{statusMessage}</p>}
+
         <div className="month-line">
           <button
             aria-label="Luna anterioara"
-            onClick={() => setMonthIndex((current) => Math.max(0, current - 1))}
+            onClick={() =>
+              setCurrentMonth((current) =>
+                new Date(current.getFullYear(), current.getMonth() - 1, 1),
+              )
+            }
           >
             ‹ prev.
           </button>
-          <strong>{monthLabels[monthIndex]}</strong>
+          <strong>{monthLabel}</strong>
           <button
             aria-label="Luna urmatoare"
-            onClick={() => setMonthIndex((current) => Math.min(monthLabels.length - 1, current + 1))}
+            onClick={() =>
+              setCurrentMonth((current) =>
+                new Date(current.getFullYear(), current.getMonth() + 1, 1),
+              )
+            }
           >
             next ›
           </button>
         </div>
 
-        <section className="calendar" aria-label="Calendar martie 2026">
+        <section className="calendar" aria-label="Calendar jurnal">
           {dayNames.map((name) => (
             <div key={name} className="head-cell">
               {name}
             </div>
           ))}
 
-          {monthCells.map((day, index) => {
-            const isCurrentMonth = index >= 6 && index < 37
-            const dayEntries = visibleEntries.filter((entry) => entry.day === day && isCurrentMonth)
+          {calendarCells.map((cell) => {
+            const dayEntries = visibleEntries.filter((entry) => entry.dateIso === cell.iso)
 
             return (
-              <article key={`${day}-${index}`} className={`day-cell ${isCurrentMonth ? '' : 'muted'}`}>
-                <span className="day-number">{day}</span>
+              <article key={cell.iso} className={`day-cell ${cell.inCurrentMonth ? '' : 'muted'}`}>
+                <span className="day-number">{cell.day}</span>
                 <div className="entry-stack">
                   {dayEntries.map((entry, cardIndex) => (
                     <div
@@ -171,7 +331,7 @@ function App() {
                       role="button"
                       tabIndex={0}
                       onClick={() =>
-                        alert(`${entry.title}\n${entry.time} · ${entry.category}\nZiua ${entry.day}`)
+                        alert(`${entry.title}\n${entry.time} · ${entry.category}\n\n${entry.content}`)
                       }
                     >
                       <b>{entry.title}</b>
