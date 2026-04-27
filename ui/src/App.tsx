@@ -87,6 +87,11 @@ function App() {
   const [entries, setEntries] = useState<ApiEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [statusMessage, setStatusMessage] = useState('')
+  const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
+  const [newEntryTitle, setNewEntryTitle] = useState('')
+  const [newEntryContent, setNewEntryContent] = useState('')
+  const [newEntryDate, setNewEntryDate] = useState(() => toIsoDate(new Date()))
+  const [isSavingEntry, setIsSavingEntry] = useState(false)
 
   const [activeCategory, setActiveCategory] = useState('Toate intrarile')
   const [searchTerm, setSearchTerm] = useState('')
@@ -170,30 +175,45 @@ function App() {
     void bootstrap()
   }, [])
 
-  async function handleCreateEntry(): Promise<void> {
+  function openCreateEntryForm(): void {
     if (!userId) {
       setStatusMessage('Nu exista user activ. Verifica API-ul.')
       return
     }
 
-    const title = window.prompt('Titlul intrarii:')?.trim()
-    if (!title) {
+    setNewEntryTitle('')
+    setNewEntryContent('')
+    setNewEntryDate(toIsoDate(new Date()))
+    setIsCreateFormOpen(true)
+    setStatusMessage('Completeaza formularul de intrare noua.')
+  }
+
+  function closeCreateEntryForm(): void {
+    setIsCreateFormOpen(false)
+  }
+
+  async function submitCreateEntry(): Promise<void> {
+    if (!userId) {
+      setStatusMessage('Nu exista user activ. Verifica API-ul.')
       return
     }
 
-    const content = window.prompt('Continutul intrarii:')?.trim()
-    if (!content) {
+    const title = newEntryTitle.trim()
+    const content = newEntryContent.trim()
+    const entryDate = newEntryDate.trim()
+
+    if (!title || !content) {
+      setStatusMessage('Titlul si continutul sunt obligatorii.')
       return
     }
 
-    const defaultDate = toIsoDate(new Date())
-    const entryDate = window.prompt('Data (YYYY-MM-DD):', defaultDate)?.trim() ?? ''
     if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
       setStatusMessage('Data invalida. Foloseste formatul YYYY-MM-DD.')
       return
     }
 
     try {
+      setIsSavingEntry(true)
       const response = await fetch(`${API_BASE}/api/entries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -211,10 +231,13 @@ function App() {
       }
 
       await loadEntries(userId)
+      setIsCreateFormOpen(false)
       setStatusMessage('Intrarea a fost salvata in backend.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Eroare la salvare.'
       setStatusMessage(message)
+    } finally {
+      setIsSavingEntry(false)
     }
   }
 
@@ -276,7 +299,7 @@ function App() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
-            <button className="primary" onClick={() => void handleCreateEntry()}>
+            <button className="primary" onClick={openCreateEntryForm}>
               + Intrare noua
             </button>
           </div>
@@ -344,6 +367,71 @@ function App() {
             )
           })}
         </section>
+
+        {isCreateFormOpen && (
+          <div className="entry-modal" role="dialog" aria-modal="true" aria-labelledby="create-entry-title">
+            <div className="entry-modal-card">
+              <div className="entry-modal-header">
+                <div>
+                  <p className="entry-modal-kicker">Jurnal</p>
+                  <h2 id="create-entry-title">Intrare noua</h2>
+                </div>
+                <button
+                  className="entry-modal-close"
+                  onClick={closeCreateEntryForm}
+                  aria-label="Inchide formularul"
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+
+              <label className="entry-field">
+                <span>Titlu</span>
+                <input
+                  type="text"
+                  value={newEntryTitle}
+                  onChange={(event) => setNewEntryTitle(event.target.value)}
+                  placeholder="Ex. Dimineata linistita"
+                  autoFocus
+                />
+              </label>
+
+              <label className="entry-field">
+                <span>Continut</span>
+                <textarea
+                  value={newEntryContent}
+                  onChange={(event) => setNewEntryContent(event.target.value)}
+                  placeholder="Scrie ce s-a intamplat azi..."
+                  rows={6}
+                />
+              </label>
+
+              <label className="entry-field">
+                <span>Data</span>
+                <input
+                  type="date"
+                  value={newEntryDate}
+                  onChange={(event) => setNewEntryDate(event.target.value)}
+                />
+              </label>
+
+              <div className="entry-modal-actions">
+                <button className="secondary" onClick={closeCreateEntryForm} type="button">
+                  Renunta
+                </button>
+                <button
+                  className="primary"
+                  onClick={() => void submitCreateEntry()}
+                  type="button"
+                  disabled={isSavingEntry}
+                >
+                  {isSavingEntry ? 'Se salveaza...' : 'Salveaza intrarea'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )

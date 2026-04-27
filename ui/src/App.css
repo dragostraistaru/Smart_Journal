@@ -169,6 +169,21 @@
   cursor: pointer;
 }
 
+.secondary {
+  border: 1px solid #d7dce5;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #344052;
+  font-weight: 600;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.72;
+  cursor: progress;
+}
+
 .month-line {
   margin: 14px 0 10px;
   display: flex;
@@ -292,6 +307,96 @@
 .entry-card.red {
   background: #f4d3d5;
   color: #a1272d;
+}
+
+.entry-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 13, 24, 0.44);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 20;
+}
+
+.entry-modal-card {
+  width: min(640px, 100%);
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #d6dce7;
+  box-shadow: 0 24px 60px rgba(13, 19, 32, 0.2);
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.entry-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.entry-modal-kicker {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  color: #7a8391;
+  text-transform: uppercase;
+}
+
+.entry-modal-header h2 {
+  margin: 0;
+  font-family: 'Fraunces', serif;
+  color: #141824;
+}
+
+.entry-modal-close {
+  border: 0;
+  background: transparent;
+  color: #6a7484;
+  font-size: 1.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.entry-field {
+  display: grid;
+  gap: 6px;
+  color: #344052;
+  font-size: 0.92rem;
+}
+
+.entry-field span {
+  font-weight: 600;
+}
+
+.entry-field input,
+.entry-field textarea {
+  border: 1px solid #d7dce5;
+  border-radius: 12px;
+  background: #fbfcfe;
+  padding: 11px 12px;
+  font: inherit;
+  color: #182033;
+}
+
+.entry-field textarea {
+  resize: vertical;
+  min-height: 140px;
+}
+
+.entry-field input:focus,
+.entry-field textarea:focus {
+  outline: 2px solid #2d5bff;
+  outline-offset: 1px;
+}
+
+.entry-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
 }
 
 @keyframes card-in {
