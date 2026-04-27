@@ -179,6 +179,16 @@
   cursor: pointer;
 }
 
+.danger {
+  border: 1px solid #f0c0c4;
+  border-radius: 10px;
+  background: #fff3f4;
+  color: #a1272d;
+  font-weight: 700;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
 .primary:disabled {
   opacity: 0.72;
   cursor: progress;

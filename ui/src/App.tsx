@@ -87,11 +87,14 @@ function App() {
   const [entries, setEntries] = useState<ApiEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [statusMessage, setStatusMessage] = useState('')
-  const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
-  const [newEntryTitle, setNewEntryTitle] = useState('')
-  const [newEntryContent, setNewEntryContent] = useState('')
-  const [newEntryDate, setNewEntryDate] = useState(() => toIsoDate(new Date()))
+  const [isEntryFormOpen, setIsEntryFormOpen] = useState(false)
+  const [entryFormMode, setEntryFormMode] = useState<'create' | 'edit'>('create')
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null)
+  const [entryTitle, setEntryTitle] = useState('')
+  const [entryContent, setEntryContent] = useState('')
+  const [entryDate, setEntryDate] = useState(() => toIsoDate(new Date()))
   const [isSavingEntry, setIsSavingEntry] = useState(false)
+  const [isDeletingEntry, setIsDeletingEntry] = useState(false)
 
   const [activeCategory, setActiveCategory] = useState('Toate intrarile')
   const [searchTerm, setSearchTerm] = useState('')
@@ -144,6 +147,47 @@ function App() {
     })
   }, [activeCategory, mappedEntries, searchTerm])
 
+  function closeEntryForm(): void {
+    setIsEntryFormOpen(false)
+    setEditingEntryId(null)
+  }
+
+  function openCreateEntryForm(): void {
+    if (!userId) {
+      setStatusMessage('Nu exista user activ. Verifica API-ul.')
+      return
+    }
+
+    setEntryFormMode('create')
+    setEditingEntryId(null)
+    setEntryTitle('')
+    setEntryContent('')
+    setEntryDate(toIsoDate(new Date()))
+    setIsEntryFormOpen(true)
+    setStatusMessage('Completeaza formularul de intrare noua.')
+  }
+
+  function openEditEntryForm(entryId: number): void {
+    if (!userId) {
+      setStatusMessage('Nu exista user activ. Verifica API-ul.')
+      return
+    }
+
+    const entry = entries.find((currentEntry) => currentEntry.id === entryId)
+    if (!entry) {
+      setStatusMessage('Nu am gasit intrarea selectata.')
+      return
+    }
+
+    setEntryFormMode('edit')
+    setEditingEntryId(entry.id)
+    setEntryTitle(entry.title)
+    setEntryContent(entry.content)
+    setEntryDate(entry.entry_date)
+    setIsEntryFormOpen(true)
+    setStatusMessage('Editezi intrarea selectata.')
+  }
+
   async function loadEntries(forUserId: number): Promise<void> {
     const response = await fetch(`${API_BASE}/api/entries?user_id=${forUserId}`)
     if (!response.ok) {
@@ -175,55 +219,44 @@ function App() {
     void bootstrap()
   }, [])
 
-  function openCreateEntryForm(): void {
-    if (!userId) {
-      setStatusMessage('Nu exista user activ. Verifica API-ul.')
-      return
-    }
-
-    setNewEntryTitle('')
-    setNewEntryContent('')
-    setNewEntryDate(toIsoDate(new Date()))
-    setIsCreateFormOpen(true)
-    setStatusMessage('Completeaza formularul de intrare noua.')
-  }
-
-  function closeCreateEntryForm(): void {
-    setIsCreateFormOpen(false)
-  }
-
   async function submitCreateEntry(): Promise<void> {
     if (!userId) {
       setStatusMessage('Nu exista user activ. Verifica API-ul.')
       return
     }
 
-    const title = newEntryTitle.trim()
-    const content = newEntryContent.trim()
-    const entryDate = newEntryDate.trim()
+    const title = entryTitle.trim()
+    const content = entryContent.trim()
+    const selectedDate = entryDate.trim()
 
     if (!title || !content) {
       setStatusMessage('Titlul si continutul sunt obligatorii.')
       return
     }
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
       setStatusMessage('Data invalida. Foloseste formatul YYYY-MM-DD.')
       return
     }
 
     try {
       setIsSavingEntry(true)
-      const response = await fetch(`${API_BASE}/api/entries`, {
-        method: 'POST',
+      const isEditMode = entryFormMode === 'edit'
+      const response = await fetch(
+        isEditMode && editingEntryId !== null
+          ? `${API_BASE}/api/entries/${editingEntryId}`
+          : `${API_BASE}/api/entries`,
+        {
+        method: isEditMode ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userId,
           title,
           content,
-          entry_date: entryDate,
+          entry_date: selectedDate,
         }),
-      })
+        },
+      )
 
       if (!response.ok) {
         const detail = (await response.json()) as { detail?: string }
@@ -231,13 +264,46 @@ function App() {
       }
 
       await loadEntries(userId)
-      setIsCreateFormOpen(false)
-      setStatusMessage('Intrarea a fost salvata in backend.')
+      closeEntryForm()
+      setStatusMessage(isEditMode ? 'Intrarea a fost actualizata.' : 'Intrarea a fost salvata in backend.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Eroare la salvare.'
       setStatusMessage(message)
     } finally {
       setIsSavingEntry(false)
+    }
+  }
+
+  async function deleteCurrentEntry(): Promise<void> {
+    if (!userId || editingEntryId === null) {
+      setStatusMessage('Nu exista intrare selectata pentru stergere.')
+      return
+    }
+
+    const confirmed = window.confirm('Stergi aceasta intrare?')
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setIsDeletingEntry(true)
+      const response = await fetch(`${API_BASE}/api/entries/${editingEntryId}?user_id=${userId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const detail = (await response.json()) as { detail?: string }
+        throw new Error(detail.detail ?? 'Nu am putut sterge intrarea.')
+      }
+
+      await loadEntries(userId)
+      closeEntryForm()
+      setStatusMessage('Intrarea a fost stearsa.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Eroare la stergere.'
+      setStatusMessage(message)
+    } finally {
+      setIsDeletingEntry(false)
     }
   }
 
@@ -353,9 +419,7 @@ function App() {
                       style={{ animationDelay: `${cardIndex * 80}ms` }}
                       role="button"
                       tabIndex={0}
-                      onClick={() =>
-                        alert(`${entry.title}\n${entry.time} · ${entry.category}\n\n${entry.content}`)
-                      }
+                      onClick={() => openEditEntryForm(entry.id)}
                     >
                       <b>{entry.title}</b>
                       <small>{entry.time}</small>
@@ -368,17 +432,19 @@ function App() {
           })}
         </section>
 
-        {isCreateFormOpen && (
+        {isEntryFormOpen && (
           <div className="entry-modal" role="dialog" aria-modal="true" aria-labelledby="create-entry-title">
             <div className="entry-modal-card">
               <div className="entry-modal-header">
                 <div>
                   <p className="entry-modal-kicker">Jurnal</p>
-                  <h2 id="create-entry-title">Intrare noua</h2>
+                  <h2 id="create-entry-title">
+                    {entryFormMode === 'edit' ? 'Editeaza intrare' : 'Intrare noua'}
+                  </h2>
                 </div>
                 <button
                   className="entry-modal-close"
-                  onClick={closeCreateEntryForm}
+                  onClick={closeEntryForm}
                   aria-label="Inchide formularul"
                   type="button"
                 >
@@ -390,8 +456,8 @@ function App() {
                 <span>Titlu</span>
                 <input
                   type="text"
-                  value={newEntryTitle}
-                  onChange={(event) => setNewEntryTitle(event.target.value)}
+                  value={entryTitle}
+                  onChange={(event) => setEntryTitle(event.target.value)}
                   placeholder="Ex. Dimineata linistita"
                   autoFocus
                 />
@@ -400,8 +466,8 @@ function App() {
               <label className="entry-field">
                 <span>Continut</span>
                 <textarea
-                  value={newEntryContent}
-                  onChange={(event) => setNewEntryContent(event.target.value)}
+                  value={entryContent}
+                  onChange={(event) => setEntryContent(event.target.value)}
                   placeholder="Scrie ce s-a intamplat azi..."
                   rows={6}
                 />
@@ -411,13 +477,18 @@ function App() {
                 <span>Data</span>
                 <input
                   type="date"
-                  value={newEntryDate}
-                  onChange={(event) => setNewEntryDate(event.target.value)}
+                  value={entryDate}
+                  onChange={(event) => setEntryDate(event.target.value)}
                 />
               </label>
 
               <div className="entry-modal-actions">
-                <button className="secondary" onClick={closeCreateEntryForm} type="button">
+                {entryFormMode === 'edit' && (
+                  <button className="danger" onClick={() => void deleteCurrentEntry()} type="button" disabled={isDeletingEntry}>
+                    {isDeletingEntry ? 'Se sterge...' : 'Sterge intrarea'}
+                  </button>
+                )}
+                <button className="secondary" onClick={closeEntryForm} type="button">
                   Renunta
                 </button>
                 <button
@@ -426,7 +497,11 @@ function App() {
                   type="button"
                   disabled={isSavingEntry}
                 >
-                  {isSavingEntry ? 'Se salveaza...' : 'Salveaza intrarea'}
+                  {isSavingEntry
+                    ? 'Se salveaza...'
+                    : entryFormMode === 'edit'
+                      ? 'Actualizeaza intrarea'
+                      : 'Salveaza intrarea'}
                 </button>
               </div>
             </div>
