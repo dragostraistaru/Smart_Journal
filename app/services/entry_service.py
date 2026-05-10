@@ -10,8 +10,17 @@ class EntryService:
         self.entry_repository = entry_repository
         self.mood_service = mood_service
 
-    def list_entries(self, user_id: int) -> list[Entry]:
-        return self.entry_repository.list_by_user(user_id)
+    def list_entries(
+        self,
+        user_id: int,
+        search: str | None = None,
+        mood: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[Entry]:
+        if date_from and date_to and date_from > date_to:
+            raise ValidationError("Intervalul de date este invalid.")
+        return self.entry_repository.list_by_user(user_id, search, mood, date_from, date_to)
 
     def create_entry(self, user_id: int, title: str, content: str, entry_date: date) -> Entry:
         self._validate(title, content)

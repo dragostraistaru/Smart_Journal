@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import './App.css'
 
@@ -98,6 +98,9 @@ function App() {
 
   const [activeCategory, setActiveCategory] = useState('Toate intrarile')
   const [searchTerm, setSearchTerm] = useState('')
+  const [moodFilter, setMoodFilter] = useState('')
+  const [dateFromFilter, setDateFromFilter] = useState('')
+  const [dateToFilter, setDateToFilter] = useState('')
   const [activeSection, setActiveSection] = useState('Jurnal')
 
   const monthLabel = useMemo(() => {
@@ -137,15 +140,10 @@ function App() {
     return mappedEntries.filter((entry) => {
       const matchesCategory =
         activeCategory === 'Toate intrarile' || entry.title === activeCategory
-      const matchesSearch =
-        searchTerm.trim().length === 0 ||
-        `${entry.title} ${entry.category} ${entry.time} ${entry.content}`
-          .toLowerCase()
-          .includes(searchTerm.trim().toLowerCase())
 
-      return matchesCategory && matchesSearch
+      return matchesCategory
     })
-  }, [activeCategory, mappedEntries, searchTerm])
+  }, [activeCategory, mappedEntries])
 
   function closeEntryForm(): void {
     setIsEntryFormOpen(false)
@@ -188,14 +186,31 @@ function App() {
     setStatusMessage('Editezi intrarea selectata.')
   }
 
-  async function loadEntries(forUserId: number): Promise<void> {
-    const response = await fetch(`${API_BASE}/api/entries?user_id=${forUserId}`)
+  const loadEntries = useCallback(async (forUserId: number): Promise<void> => {
+    const params = new URLSearchParams({ user_id: String(forUserId) })
+    const search = searchTerm.trim()
+
+    if (search) {
+      params.set('search', search)
+    }
+    if (moodFilter) {
+      params.set('mood', moodFilter)
+    }
+    if (dateFromFilter) {
+      params.set('date_from', dateFromFilter)
+    }
+    if (dateToFilter) {
+      params.set('date_to', dateToFilter)
+    }
+
+    const response = await fetch(`${API_BASE}/api/entries?${params.toString()}`)
     if (!response.ok) {
-      throw new Error('Nu am putut incarca intrarile din backend.')
+      const detail = (await response.json()) as { detail?: string }
+      throw new Error(detail.detail ?? 'Nu am putut incarca intrarile din backend.')
     }
     const payload = (await response.json()) as ApiEntry[]
     setEntries(payload)
-  }
+  }, [dateFromFilter, dateToFilter, moodFilter, searchTerm])
 
   useEffect(() => {
     async function bootstrap(): Promise<void> {
@@ -207,7 +222,6 @@ function App() {
 
         const userPayload = (await userResponse.json()) as { id: number; email: string }
         setUserId(userPayload.id)
-        await loadEntries(userPayload.id)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Eroare necunoscuta de conectare la API.'
         setStatusMessage(message)
@@ -218,6 +232,33 @@ function App() {
 
     void bootstrap()
   }, [])
+
+  useEffect(() => {
+    if (!userId) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsLoading(true)
+      loadEntries(userId)
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : 'Eroare la filtrarea intrarilor.'
+          setStatusMessage(message)
+        })
+        .finally(() => setIsLoading(false))
+    }, 250)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [loadEntries, userId])
+
+  function clearFilters(): void {
+    setSearchTerm('')
+    setMoodFilter('')
+    setDateFromFilter('')
+    setDateToFilter('')
+    setActiveCategory('Toate intrarile')
+    setStatusMessage('Filtrele au fost resetate.')
+  }
 
   async function submitCreateEntry(): Promise<void> {
     if (!userId) {
@@ -247,14 +288,14 @@ function App() {
           ? `${API_BASE}/api/entries/${editingEntryId}`
           : `${API_BASE}/api/entries`,
         {
-        method: isEditMode ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          title,
-          content,
-          entry_date: selectedDate,
-        }),
+          method: isEditMode ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            title,
+            content,
+            entry_date: selectedDate,
+          }),
         },
       )
 
@@ -370,6 +411,37 @@ function App() {
             </button>
           </div>
         </header>
+
+        <section className="filter-panel" aria-label="Filtre jurnal">
+          <label>
+            <span>Dispozitie</span>
+            <select value={moodFilter} onChange={(event) => setMoodFilter(event.target.value)}>
+              <option value="">Toate</option>
+              <option value="Calm">Calm</option>
+              <option value="Neutral">Neutral</option>
+              <option value="Anxious">Anxious</option>
+            </select>
+          </label>
+          <label>
+            <span>De la</span>
+            <input
+              type="date"
+              value={dateFromFilter}
+              onChange={(event) => setDateFromFilter(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Pana la</span>
+            <input
+              type="date"
+              value={dateToFilter}
+              onChange={(event) => setDateToFilter(event.target.value)}
+            />
+          </label>
+          <button className="secondary" onClick={clearFilters} type="button">
+            Reseteaza filtre
+          </button>
+        </section>
 
         {isLoading && <p className="status-line">Se incarca datele din backend...</p>}
         {!isLoading && statusMessage && <p className="status-line">{statusMessage}</p>}

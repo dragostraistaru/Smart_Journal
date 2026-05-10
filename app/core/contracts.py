@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Protocol
 
 from app.models.attachment import Attachment
@@ -14,7 +15,14 @@ class UserRepositoryProtocol(Protocol):
 
 
 class EntryRepositoryProtocol(Protocol):
-    def list_by_user(self, user_id: int) -> list[Entry]:
+    def list_by_user(
+        self,
+        user_id: int,
+        search: str | None = None,
+        mood: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[Entry]:
         ...
 
     def get_by_id_for_user(self, entry_id: int, user_id: int) -> Entry | None:

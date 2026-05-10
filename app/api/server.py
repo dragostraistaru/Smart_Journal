@@ -118,11 +118,17 @@ def login(payload: LoginPayload) -> UserOut:
 
 
 @app.get("/api/entries", response_model=list[EntryOut])
-def list_entries(user_id: int) -> list[EntryOut]:
+def list_entries(
+    user_id: int,
+    search: str | None = None,
+    mood: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[EntryOut]:
     session = SessionLocal()
     try:
         service = EntryService(EntryRepository(session), KeywordMoodDetector())
-        entries = service.list_entries(user_id)
+        entries = service.list_entries(user_id, search, mood, date_from, date_to)
         return [
             EntryOut(
                 id=e.id,
@@ -137,6 +143,8 @@ def list_entries(user_id: int) -> list[EntryOut]:
             )
             for e in entries
         ]
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         session.close()
 
