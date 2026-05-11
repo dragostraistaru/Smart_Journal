@@ -33,6 +33,23 @@ type CalendarCell = {
   inCurrentMonth: boolean
 }
 
+type DashboardStats = {
+  total_entries: number
+  current_month_entries: number
+  writing_days: number
+  average_mood_confidence: number
+  top_mood: string
+  mood_distribution: {
+    mood: string
+    count: number
+    percent: number
+  }[]
+  weekday_frequency: {
+    day: string
+    count: number
+  }[]
+}
+
 const dayNames = ['LUN', 'MAR', 'MIE', 'JOI', 'VIN', 'SAM', 'DUM']
 
 function toIsoDate(value: Date): string {
@@ -85,6 +102,7 @@ function App() {
   })
   const [userId, setUserId] = useState<number | null>(null)
   const [entries, setEntries] = useState<ApiEntry[]>([])
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [statusMessage, setStatusMessage] = useState('')
   const [isEntryFormOpen, setIsEntryFormOpen] = useState(false)
@@ -106,6 +124,8 @@ function App() {
   const monthLabel = useMemo(() => {
     return new Intl.DateTimeFormat('ro-RO', { month: 'long', year: 'numeric' }).format(currentMonth)
   }, [currentMonth])
+
+  const pageTitle = activeSection === 'Dashboard' ? 'Dashboard' : 'Jurnalul meu'
 
   const categories = useMemo(() => {
     const uniqueTitles = [...new Set(entries.map((entry) => entry.title))]
@@ -212,6 +232,16 @@ function App() {
     setEntries(payload)
   }, [dateFromFilter, dateToFilter, moodFilter, searchTerm])
 
+  const loadDashboardStats = useCallback(async (forUserId: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/api/dashboard?user_id=${forUserId}`)
+    if (!response.ok) {
+      const detail = (await response.json()) as { detail?: string }
+      throw new Error(detail.detail ?? 'Nu am putut incarca dashboard-ul.')
+    }
+    const payload = (await response.json()) as DashboardStats
+    setDashboardStats(payload)
+  }, [])
+
   useEffect(() => {
     async function bootstrap(): Promise<void> {
       try {
@@ -240,7 +270,7 @@ function App() {
 
     const timeoutId = window.setTimeout(() => {
       setIsLoading(true)
-      loadEntries(userId)
+      Promise.all([loadEntries(userId), loadDashboardStats(userId)])
         .catch((error) => {
           const message = error instanceof Error ? error.message : 'Eroare la filtrarea intrarilor.'
           setStatusMessage(message)
@@ -249,7 +279,7 @@ function App() {
     }, 250)
 
     return () => window.clearTimeout(timeoutId)
-  }, [loadEntries, userId])
+  }, [loadDashboardStats, loadEntries, userId])
 
   function clearFilters(): void {
     setSearchTerm('')
@@ -304,7 +334,7 @@ function App() {
         throw new Error(detail.detail ?? 'Nu am putut salva intrarea.')
       }
 
-      await loadEntries(userId)
+      await Promise.all([loadEntries(userId), loadDashboardStats(userId)])
       closeEntryForm()
       setStatusMessage(isEditMode ? 'Intrarea a fost actualizata.' : 'Intrarea a fost salvata in backend.')
     } catch (error) {
@@ -337,7 +367,7 @@ function App() {
         throw new Error(detail.detail ?? 'Nu am putut sterge intrarea.')
       }
 
-      await loadEntries(userId)
+      await Promise.all([loadEntries(userId), loadDashboardStats(userId)])
       closeEntryForm()
       setStatusMessage('Intrarea a fost stearsa.')
     } catch (error) {
@@ -397,56 +427,131 @@ function App() {
 
       <main className="board">
         <header className="topbar">
-          <h1>Jurnalul meu</h1>
+          <h1>{pageTitle}</h1>
           <div className="topbar-actions">
-            <input
-              type="search"
-              placeholder="Cauta intrare..."
-              aria-label="Cauta intrare"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
+            {activeSection === 'Jurnal' && (
+              <input
+                type="search"
+                placeholder="Cauta intrare..."
+                aria-label="Cauta intrare"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            )}
             <button className="primary" onClick={openCreateEntryForm}>
               + Intrare noua
             </button>
           </div>
         </header>
 
-        <section className="filter-panel" aria-label="Filtre jurnal">
-          <label>
-            <span>Dispozitie</span>
-            <select value={moodFilter} onChange={(event) => setMoodFilter(event.target.value)}>
-              <option value="">Toate</option>
-              <option value="Calm">Calm</option>
-              <option value="Neutral">Neutral</option>
-              <option value="Anxious">Anxious</option>
-            </select>
-          </label>
-          <label>
-            <span>De la</span>
-            <input
-              type="date"
-              value={dateFromFilter}
-              onChange={(event) => setDateFromFilter(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>Pana la</span>
-            <input
-              type="date"
-              value={dateToFilter}
-              onChange={(event) => setDateToFilter(event.target.value)}
-            />
-          </label>
-          <button className="secondary" onClick={clearFilters} type="button">
-            Reseteaza filtre
-          </button>
-        </section>
+        {activeSection === 'Jurnal' && (
+          <section className="filter-panel" aria-label="Filtre jurnal">
+            <label>
+              <span>Dispozitie</span>
+              <select value={moodFilter} onChange={(event) => setMoodFilter(event.target.value)}>
+                <option value="">Toate</option>
+                <option value="Calm">Calm</option>
+                <option value="Neutral">Neutral</option>
+                <option value="Anxious">Anxious</option>
+              </select>
+            </label>
+            <label>
+              <span>De la</span>
+              <input
+                type="date"
+                value={dateFromFilter}
+                onChange={(event) => setDateFromFilter(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Pana la</span>
+              <input
+                type="date"
+                value={dateToFilter}
+                onChange={(event) => setDateToFilter(event.target.value)}
+              />
+            </label>
+            <button className="secondary" onClick={clearFilters} type="button">
+              Reseteaza filtre
+            </button>
+          </section>
+        )}
 
         {isLoading && <p className="status-line">Se incarca datele din backend...</p>}
         {!isLoading && statusMessage && <p className="status-line">{statusMessage}</p>}
 
-        <div className="month-line">
+        {activeSection === 'Dashboard' && dashboardStats && (
+          <section className="dashboard" aria-label="Dashboard jurnal">
+            <div className="stat-grid">
+              <article className="stat-card">
+                <span>Total intrari</span>
+                <strong>{dashboardStats.total_entries}</strong>
+              </article>
+              <article className="stat-card">
+                <span>Luna curenta</span>
+                <strong>{dashboardStats.current_month_entries}</strong>
+              </article>
+              <article className="stat-card">
+                <span>Zile cu jurnal</span>
+                <strong>{dashboardStats.writing_days}</strong>
+              </article>
+              <article className="stat-card">
+                <span>Dispozitie principala</span>
+                <strong>{dashboardStats.top_mood}</strong>
+              </article>
+            </div>
+
+            <div className="dashboard-grid">
+              <section className="dashboard-panel" aria-label="Distributie dispozitii">
+                <div className="panel-heading">
+                  <h2>Dispozitii</h2>
+                  <span>{Math.round(dashboardStats.average_mood_confidence * 100)}% incredere medie</span>
+                </div>
+                <div className="mood-bars">
+                  {dashboardStats.mood_distribution.length === 0 && (
+                    <p className="empty-state">Nu exista intrari pentru statistici.</p>
+                  )}
+                  {dashboardStats.mood_distribution.map((item) => (
+                    <div key={item.mood} className="metric-row">
+                      <div className="metric-label">
+                        <span>{item.mood}</span>
+                        <strong>{item.count}</strong>
+                      </div>
+                      <div className="bar-track" aria-label={`${item.mood}: ${item.percent}%`}>
+                        <span style={{ width: `${item.percent}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="dashboard-panel" aria-label="Frecventa scrierii">
+                <div className="panel-heading">
+                  <h2>Frecventa</h2>
+                  <span>intrari pe zile</span>
+                </div>
+                <div className="weekday-chart">
+                  {dashboardStats.weekday_frequency.map((item) => {
+                    const maxCount = Math.max(...dashboardStats.weekday_frequency.map((day) => day.count), 1)
+                    const height = Math.max((item.count / maxCount) * 100, item.count > 0 ? 12 : 4)
+
+                    return (
+                      <div key={item.day} className="weekday-column">
+                        <div className="column-track">
+                          <span style={{ height: `${height}%` }} />
+                        </div>
+                        <strong>{item.count}</strong>
+                        <small>{item.day}</small>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            </div>
+          </section>
+        )}
+
+        <div className={`month-line ${activeSection === 'Dashboard' ? 'hidden' : ''}`}>
           <button
             aria-label="Luna anterioara"
             onClick={() =>
@@ -470,7 +575,7 @@ function App() {
           </button>
         </div>
 
-        <section className="calendar" aria-label="Calendar jurnal">
+        <section className={`calendar ${activeSection === 'Dashboard' ? 'hidden' : ''}`} aria-label="Calendar jurnal">
           {dayNames.map((name) => (
             <div key={name} className="head-cell">
               {name}

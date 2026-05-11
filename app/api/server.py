@@ -52,6 +52,27 @@ class EntryOut(BaseModel):
     updated_at: datetime
 
 
+class MoodStatOut(BaseModel):
+    mood: str
+    count: int
+    percent: int
+
+
+class WeekdayStatOut(BaseModel):
+    day: str
+    count: int
+
+
+class DashboardStatsOut(BaseModel):
+    total_entries: int
+    current_month_entries: int
+    writing_days: int
+    average_mood_confidence: float
+    top_mood: str
+    mood_distribution: list[MoodStatOut]
+    weekday_frequency: list[WeekdayStatOut]
+
+
 app = FastAPI(title="Smart Journal API", version="0.1.0")
 
 app.add_middleware(
@@ -145,6 +166,17 @@ def list_entries(
         ]
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        session.close()
+
+
+@app.get("/api/dashboard", response_model=DashboardStatsOut)
+def dashboard_stats(user_id: int) -> DashboardStatsOut:
+    session = SessionLocal()
+    try:
+        service = EntryService(EntryRepository(session), KeywordMoodDetector())
+        stats = service.get_dashboard_stats(user_id)
+        return DashboardStatsOut(**stats)
     finally:
         session.close()
 

@@ -65,3 +65,27 @@ def test_list_entries_rejects_invalid_date_range() -> None:
             raise AssertionError("Expected invalid date range to be rejected.")
     finally:
         session.close()
+
+
+def test_dashboard_stats_counts_entries_moods_and_weekdays() -> None:
+    session = SessionLocal()
+    try:
+        user_repo = UserRepository(session)
+        unique_email = f"entry-dashboard-{uuid4()}@example.com"
+        user = user_repo.add(User(email=unique_email, password_hash="hash"))
+        service = EntryService(EntryRepository(session), MoodService())
+
+        service.create_entry(user.id, "Luni", "Azi sunt fericit", date(2026, 5, 4))
+        service.create_entry(user.id, "Marti", "Azi sunt obosit", date(2026, 5, 5))
+        service.create_entry(user.id, "Alta luni", "Azi sunt happy", date(2026, 5, 11))
+
+        stats = service.get_dashboard_stats(user.id, today=date(2026, 5, 20))
+
+        assert stats["total_entries"] == 3
+        assert stats["current_month_entries"] == 3
+        assert stats["writing_days"] == 3
+        assert stats["top_mood"] == "Calm"
+        assert stats["weekday_frequency"][0]["count"] == 2
+        assert stats["weekday_frequency"][1]["count"] == 1
+    finally:
+        session.close()
