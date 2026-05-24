@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -15,6 +15,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.entry_service import EntryService
 from app.services.mood_service import KeywordMoodDetector
+from app.services.entry_service import EntryService
 
 
 class RegisterPayload(BaseModel):
@@ -33,6 +34,16 @@ class EntryPayload(BaseModel):
     title: str
     content: str
     entry_date: date
+
+
+class UserSettingsOut(BaseModel):
+    reminders_enabled: bool
+    reminder_time: str | None
+
+
+class UserSettingsPayload(BaseModel):
+    reminders_enabled: bool
+    reminder_time: str | None
 
 
 class UserOut(BaseModel):
@@ -183,6 +194,47 @@ def dashboard_stats(user_id: int) -> DashboardStatsOut:
         session.close()
 
 
+@app.get("/api/users/{user_id}/settings", response_model=UserSettingsOut)
+def get_user_settings(user_id: int) -> UserSettingsOut:
+    session = SessionLocal()
+    try:
+        user = session.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="Utilizatorul nu exista.")
+        return UserSettingsOut(reminders_enabled=bool(user.reminders_enabled), reminder_time=user.reminder_time)
+    finally:
+        session.close()
+
+
+@app.put("/api/users/{user_id}/settings", response_model=UserSettingsOut)
+def update_user_settings(user_id: int, payload: UserSettingsPayload) -> UserSettingsOut:
+    session = SessionLocal()
+    try:
+        user = session.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="Utilizatorul nu exista.")
+        # Basic validation for time format HH:MM or None
+        if payload.reminder_time:
+            try:
+                parts = payload.reminder_time.split(":")
+                if len(parts) != 2:
+                    raise ValueError()
+                hh = int(parts[0])
+                mm = int(parts[1])
+                if not (0 <= hh < 24 and 0 <= mm < 60):
+                    raise ValueError()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Format reminder_time invalid. Foloseste HH:MM.")
+
+        user.reminders_enabled = bool(payload.reminders_enabled)
+        user.reminder_time = payload.reminder_time
+        session.add(user)
+        session.commit()
+        return UserSettingsOut(reminders_enabled=bool(user.reminders_enabled), reminder_time=user.reminder_time)
+    finally:
+        session.close()
+
+
 @app.post("/api/entries", response_model=EntryOut)
 def create_entry(payload: EntryPayload) -> EntryOut:
     session = SessionLocal()
@@ -242,6 +294,60 @@ def update_entry(entry_id: int, payload: EntryPayload) -> EntryOut:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    finally:
+        session.close()
+
+
+def _send_mock_notification(user_email: str, message: str) -> None:
+    # Placeholder for real notification delivery (email, push, etc.).
+    print(f"[notification] to {user_email}: {message}")
+
+
+@app.post("/api/reminders/check")
+def check_reminders(background_tasks: BackgroundTasks, current_time: str | None = Query(default=None)) -> dict:
+    """Check all users and queue notifications for those who need a reminder now.
+
+    Optional query `current_time` allows testing in HH:MM format.
+    """
+    session = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        if current_time:
+            try:
+                hh, mm = map(int, current_time.split(":"))
+                now = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            except Exception:
+                raise HTTPException(status_code=400, detail="current_time must be HH:MM")
+
+        results: list[dict] = []
+        users = session.execute(select(User)).scalars().all()
+        for user in users:
+            if not user.reminders_enabled or not user.reminder_time:
+                continue
+            # compare times (use user's reminder_time as HH:MM)
+            try:
+                r_h, r_m = map(int, user.reminder_time.split(":"))
+            except Exception:
+                continue
+
+            # If current hour/minute is past or equal reminder time (UTC assumption)
+            if now.hour < r_h or (now.hour == r_h and now.minute < r_m):
+                continue
+
+            # Check if user has any entry for today
+            today = date.today()
+            entry_repo = EntryRepository(session)
+            todays = entry_repo.list_by_user(user.id, date_from=today, date_to=today)
+            if todays:
+                # user already wrote today
+                continue
+
+            # queue mock notification
+            message = "Nu intrerupe streak-ul! Scrie in jurnalul tau astazi."
+            background_tasks.add_task(_send_mock_notification, user.email, message)
+            results.append({"user_id": user.id, "email": user.email, "message": message})
+
+        return {"notifications_queued": results}
     finally:
         session.close()
 
