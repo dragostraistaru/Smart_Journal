@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date
 
 from app.core.contracts import EntryRepositoryProtocol, MoodDetectorProtocol
@@ -10,8 +11,17 @@ class EntryService:
         self.entry_repository = entry_repository
         self.mood_service = mood_service
 
-    def list_entries(self, user_id: int) -> list[Entry]:
-        return self.entry_repository.list_by_user(user_id)
+    def list_entries(
+        self,
+        user_id: int,
+        search: str | None = None,
+        mood: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[Entry]:
+        if date_from and date_to and date_from > date_to:
+            raise ValidationError("Intervalul de date este invalid.")
+        return self.entry_repository.list_by_user(user_id, search, mood, date_from, date_to)
 
     def create_entry(self, user_id: int, title: str, content: str, entry_date: date) -> Entry:
         self._validate(title, content)
@@ -44,6 +54,46 @@ class EntryService:
         if not entry:
             raise NotFoundError("Intrarea nu a fost gasita.")
         self.entry_repository.delete(entry)
+
+    def get_dashboard_stats(self, user_id: int, today: date | None = None) -> dict[str, object]:
+        entries = self.entry_repository.list_by_user(user_id)
+        current_day = today or date.today()
+        current_month_entries = [
+            entry
+            for entry in entries
+            if entry.entry_date.year == current_day.year and entry.entry_date.month == current_day.month
+        ]
+        confidence_values = [
+            entry.mood_confidence
+            for entry in entries
+            if entry.mood_confidence is not None
+        ]
+        mood_counts = Counter(entry.mood_label or "Necunoscut" for entry in entries)
+        weekday_counts = Counter(entry.entry_date.weekday() for entry in entries)
+        writing_days = {entry.entry_date for entry in entries}
+        total_entries = len(entries)
+
+        return {
+            "total_entries": total_entries,
+            "current_month_entries": len(current_month_entries),
+            "writing_days": len(writing_days),
+            "average_mood_confidence": round(sum(confidence_values) / len(confidence_values), 2)
+            if confidence_values
+            else 0,
+            "top_mood": mood_counts.most_common(1)[0][0] if mood_counts else "N/A",
+            "mood_distribution": [
+                {
+                    "mood": mood,
+                    "count": count,
+                    "percent": round((count / total_entries) * 100) if total_entries else 0,
+                }
+                for mood, count in mood_counts.most_common()
+            ],
+            "weekday_frequency": [
+                {"day": label, "count": weekday_counts[index]}
+                for index, label in enumerate(["Lun", "Mar", "Mie", "Joi", "Vin", "Sam", "Dum"])
+            ],
+        }
 
     def get_entry(self, entry_id: int, user_id: int) -> Entry:
         entry = self.entry_repository.get_by_id_for_user(entry_id, user_id)

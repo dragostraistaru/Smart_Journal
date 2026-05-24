@@ -42,10 +42,48 @@ O aplicatie desktop de jurnal personal cu functionalitati AI pentru analiza disp
 - `app/db` - sesiune, baza, init DB
 - `storage/images` - poze atasate intrarilor
 
-## Rulare locala
+## Rulare locală
 
-1. Activeaza mediul virtual.
-2. Instaleaza dependintele: `pip install -r requirements.txt`
-3. Ruleaza aplicatia: `python main.py`
+Urmează pașii de mai jos pentru a porni componentele principale ale proiectului.
 
-La prima rulare se creeaza automat baza de date locala in `storage/smart_journal.db`.
+1) Activează mediul virtual (PowerShell):
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\n+venv\Scripts\Activate.ps1
+```
+
+2) Instalează dependențele Python:
+
+```powershell
+pip install -r requirements.txt
+```
+
+3) Pornește API-ul (FastAPI) — endpoint-urile sunt disponibile la `http://127.0.0.1:8000`:
+
+```powershell
+python run_api.py
+```
+
+4) Opțiuni pentru interfață (alege una):
+
+- PyQt (aplicație desktop Python):
+
+```powershell
+python main.py
+```
+
+- React + Electron (dezvoltare + desktop wrapper):
+
+```powershell
+cd ui
+npm install
+npm run dev:desktop
+```
+
+`npm run dev:desktop` pornește serverul Vite și lansează aplicația Electron; se așteaptă ca API-ul să fie deja pornit pe portul 8000.
+
+Note:
+- La prima rulare, baza de date locală se va crea automat în `storage/smart_journal.db`.
+- Demo user bootstrap endpoint: `POST /api/users/bootstrap` (email: `demo@smartjournal.local`).
+- Frontend-ul React comunică cu API-ul pe `http://127.0.0.1:8000`.
