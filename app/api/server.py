@@ -71,6 +71,8 @@ class DashboardStatsOut(BaseModel):
     top_mood: str
     mood_distribution: list[MoodStatOut]
     weekday_frequency: list[WeekdayStatOut]
+    current_streak: int
+    longest_streak: int
 
 
 app = FastAPI(title="Smart Journal API", version="0.1.0")

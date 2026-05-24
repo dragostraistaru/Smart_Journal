@@ -1,5 +1,5 @@
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 
 from app.core.contracts import EntryRepositoryProtocol, MoodDetectorProtocol
 from app.core.exceptions import NotFoundError, ValidationError
@@ -72,6 +72,33 @@ class EntryService:
         weekday_counts = Counter(entry.entry_date.weekday() for entry in entries)
         writing_days = {entry.entry_date for entry in entries}
         total_entries = len(entries)
+        # Calculate streaks based on unique writing dates (dates <= today)
+        unique_dates = sorted({d for d in writing_days if d <= current_day})
+
+        if not unique_dates:
+            current_streak = 0
+            longest_streak = 0
+        else:
+            # current streak: count consecutive days ending at the most recent entry date <= today
+            last_date = unique_dates[-1]
+            streak = 0
+            check_date = last_date
+            while check_date in writing_days:
+                streak += 1
+                check_date = check_date - timedelta(days=1)
+            current_streak = streak
+
+            # longest streak: scan sorted dates for the longest consecutive run
+            longest = 1
+            run = 1
+            for prev, curr in zip(unique_dates, unique_dates[1:]):
+                if curr == prev + timedelta(days=1):
+                    run += 1
+                    if run > longest:
+                        longest = run
+                else:
+                    run = 1
+            longest_streak = longest
 
         return {
             "total_entries": total_entries,
@@ -93,6 +120,8 @@ class EntryService:
                 {"day": label, "count": weekday_counts[index]}
                 for index, label in enumerate(["Lun", "Mar", "Mie", "Joi", "Vin", "Sam", "Dum"])
             ],
+            "current_streak": current_streak,
+            "longest_streak": longest_streak,
         }
 
     def get_entry(self, entry_id: int, user_id: int) -> Entry:
