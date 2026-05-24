@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +15,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.entry_service import EntryService
 from app.services.mood_service import KeywordMoodDetector
+from app.services.summary_service import generate_monthly_summary
 from app.services.entry_service import EntryService
 
 
@@ -190,6 +191,45 @@ def dashboard_stats(user_id: int) -> DashboardStatsOut:
         service = EntryService(EntryRepository(session), KeywordMoodDetector())
         stats = service.get_dashboard_stats(user_id)
         return DashboardStatsOut(**stats)
+    finally:
+        session.close()
+
+
+@app.post("/api/summaries")
+def generate_summary(user_id: int, year: int, month: int) -> dict:
+    """Generate a monthly summary using Ollama (requires Ollama running and configured).
+
+    Returns: {"summary": "..."}
+    """
+    session = SessionLocal()
+    try:
+        # verify user exists
+        user = session.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="Utilizatorul nu exista.")
+
+        entry_repo = EntryRepository(session)
+        # collect entries for the month
+        date_from = date(year, month, 1)
+        # compute last day
+        if month == 12:
+            date_to = date(year + 1, 1, 1)
+        else:
+            date_to = date(year, month + 1, 1)
+        date_to = date_to - timedelta(days=1)
+
+        entries = entry_repo.list_by_user(user_id, date_from=date_from, date_to=date_to)
+        if not entries:
+            raise HTTPException(status_code=400, detail="Nu exista intrari pentru luna selectata.")
+
+        try:
+            summary = generate_monthly_summary(entries, year, month)
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        return {"summary": summary}
     finally:
         session.close()
 
