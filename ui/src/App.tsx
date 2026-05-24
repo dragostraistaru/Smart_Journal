@@ -48,6 +48,8 @@ type DashboardStats = {
     day: string
     count: number
   }[]
+  current_streak?: number
+  longest_streak?: number
 }
 
 const dayNames = ['LUN', 'MAR', 'MIE', 'JOI', 'VIN', 'SAM', 'DUM']
@@ -408,8 +410,13 @@ function App() {
         </nav>
 
         <article className="streak-card">
-          <strong>{visibleEntries.length}</strong>
-          <span>intrari vizibile</span>
+          <strong>{dashboardStats ? dashboardStats.current_streak ?? 0 : visibleEntries.length}</strong>
+          <span>{dashboardStats ? 'zile consecutive' : 'intrari vizibile'}</span>
+          {dashboardStats && (
+            <small style={{ opacity: 0.95, marginTop: 6, display: 'block' }}>
+              Record: {dashboardStats.longest_streak ?? 0}
+            </small>
+          )}
         </article>
 
         <footer className="bottom-nav">
@@ -498,6 +505,14 @@ function App() {
               <article className="stat-card">
                 <span>Dispozitie principala</span>
                 <strong>{dashboardStats.top_mood}</strong>
+              </article>
+              <article className="stat-card">
+                <span>Streak curent</span>
+                <strong>{dashboardStats.current_streak ?? 0}</strong>
+              </article>
+              <article className="stat-card">
+                <span>Record streak</span>
+                <strong>{dashboardStats.longest_streak ?? 0}</strong>
               </article>
             </div>
 
