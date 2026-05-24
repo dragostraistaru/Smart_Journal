@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 
 import './App.css'
 
@@ -122,6 +122,10 @@ function App() {
   const [dateFromFilter, setDateFromFilter] = useState('')
   const [dateToFilter, setDateToFilter] = useState('')
   const [activeSection, setActiveSection] = useState('Jurnal')
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [remindersEnabled, setRemindersEnabled] = useState(false)
+  const [reminderTime, setReminderTime] = useState('21:00')
+  const reminderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const monthLabel = useMemo(() => {
     return new Intl.DateTimeFormat('ro-RO', { month: 'long', year: 'numeric' }).format(currentMonth)
@@ -266,6 +270,86 @@ function App() {
   }, [])
 
   useEffect(() => {
+    async function loadSettings(): Promise<void> {
+      if (!userId) return
+      try {
+        const resp = await fetch(`${API_BASE}/api/users/${userId}/settings`)
+        if (!resp.ok) return
+        const payload = await resp.json()
+        setRemindersEnabled(Boolean(payload.reminders_enabled))
+        if (payload.reminder_time) setReminderTime(payload.reminder_time)
+      } catch {
+        // ignore
+      }
+    }
+
+    void loadSettings()
+  }, [userId])
+
+  // Show a native desktop notification (Electron / browser)
+  function showDesktopNotification(title: string, body: string): void {
+    try {
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body })
+        } else if (Notification.permission !== 'denied') {
+          void Notification.requestPermission().then((perm) => {
+            if (perm === 'granted') {
+              new Notification(title, { body })
+            }
+          })
+        }
+      }
+    } catch (err) {
+      // ignore errors
+    }
+  }
+
+  // Schedule the next reminder based on `reminderTime` and `remindersEnabled`.
+  function scheduleNextReminder(): void {
+    // clear existing
+    if (reminderTimerRef.current) {
+      clearTimeout(reminderTimerRef.current)
+      reminderTimerRef.current = null
+    }
+
+    if (!remindersEnabled || !reminderTime) return
+
+    const [hh, mm] = reminderTime.split(':').map((s) => Number(s))
+    if (Number.isNaN(hh) || Number.isNaN(mm)) return
+
+    const now = new Date()
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0)
+    if (next.getTime() <= now.getTime()) {
+      next.setDate(next.getDate() + 1)
+    }
+
+    const delay = next.getTime() - now.getTime()
+    reminderTimerRef.current = setTimeout(() => {
+      // Only notify if user hasn't written today
+      const todayIso = toIsoDate(new Date())
+      const hasToday = entries.some((e) => e.entry_date === todayIso)
+      if (!hasToday) {
+        showDesktopNotification('Reminder Smart Journal', "Nu întrerupe streak-ul! Scrie în jurnalul tău azi.")
+      }
+      // schedule next one
+      scheduleNextReminder()
+    }, delay)
+  }
+
+  // Re-schedule when settings or entries change
+  useEffect(() => {
+    scheduleNextReminder()
+    return () => {
+      if (reminderTimerRef.current) {
+        clearTimeout(reminderTimerRef.current)
+        reminderTimerRef.current = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remindersEnabled, reminderTime, entries])
+
+  useEffect(() => {
     if (!userId) {
       return
     }
@@ -380,6 +464,27 @@ function App() {
     }
   }
 
+  async function saveSettings(): Promise<void> {
+    if (!userId) return
+    try {
+      const resp = await fetch(`${API_BASE}/api/users/${userId}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reminders_enabled: remindersEnabled, reminder_time: reminderTime }),
+      })
+      if (!resp.ok) {
+        const detail = await resp.json()
+        setStatusMessage(detail.detail ?? 'Eroare la salvarea setărilor.')
+        return
+      }
+      setStatusMessage('Setările au fost salvate.')
+      setIsSettingsOpen(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Eroare necunoscută.'
+      setStatusMessage(message)
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -408,6 +513,14 @@ function App() {
             + Categorie noua
           </button>
         </nav>
+
+        <button
+          className="category"
+          style={{ marginTop: 12, background: '#f3f4f6' }}
+          onClick={() => setIsSettingsOpen(true)}
+        >
+          ⚙️ Setări reminder
+        </button>
 
         <article className="streak-card">
           <strong>{dashboardStats ? dashboardStats.current_streak ?? 0 : visibleEntries.length}</strong>
@@ -486,6 +599,39 @@ function App() {
 
         {isLoading && <p className="status-line">Se incarca datele din backend...</p>}
         {!isLoading && statusMessage && <p className="status-line">{statusMessage}</p>}
+
+        {isSettingsOpen && (
+          <div className="modal-overlay">
+            <div className="modal" role="dialog" aria-modal>
+              <h2>Setări reminder</h2>
+              <label style={{ display: 'block', marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={remindersEnabled}
+                  onChange={(e) => setRemindersEnabled(e.target.checked)}
+                />{' '}
+                Activează reminder zilnic
+              </label>
+              <label style={{ display: 'block', marginTop: 8 }}>
+                Ora preferată
+                <input
+                  type="time"
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  style={{ display: 'block', marginTop: 6 }}
+                />
+              </label>
+              <div style={{ marginTop: 12 }}>
+                <button className="primary" onClick={() => void saveSettings()}>
+                  Salvează
+                </button>
+                <button className="secondary" onClick={() => setIsSettingsOpen(false)} style={{ marginLeft: 8 }}>
+                  Anulează
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeSection === 'Dashboard' && dashboardStats && (
           <section className="dashboard" aria-label="Dashboard jurnal">

@@ -486,6 +486,21 @@
   background: #f3ebc2;
   color: #7a610a;
 }
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 13, 24, 0.44);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+}
+.modal {
+  background: white;
+  padding: 18px;
+  border-radius: 10px;
+  width: 380px;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.2);
+}
 
 .entry-card.orange {
   background: #f2dfc3;
